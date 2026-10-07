@@ -49,23 +49,60 @@ First run creates `.venv/` automatically (no sudo). No global install needed.
 ```
 
 ```
-╔══════════════════════════════════════════════════════════╗
-║                         IPGHOST                          ║
-║             GLOBAL IP INTELLIGENCE CLI                   ║
-╚══════════════════════════════════════════════════════════╝
+   ___ ____   ____ ____  _   _  ___  ____ _____
+  |_ _|  _ \ / ___/ ___|| | | |/ _ \ / ___|_   _|
+   | || |_) | |  | |  _ | |_| | | | | |  _  | |
+   | ||  __/| |__| |_| ||  _  | |_| | |_| | | |
+  |___|_|    \____\____||_| |_|\___/ \____|_|
+
+        GLOBAL IP INTELLIGENCE & GEOLOCATION CLI
+
+[::] Global IP Intelligence & Geolocation CLI
+[::] Version 0.1.0
+[+] Status: Ready
 
 [?] Enter public IP address:
-> 8.8.8.8
+[-] 8.8.8.8
+
+[::] Validating IP...
+[::] Querying GeoIP provider...
+[+] Lookup completed.
+
+[+] IP INFORMATION
+    Address      : 8.8.8.8
+    Version      : IPv4
+    Type         : Public
+
+[+] GEOLOCATION
+    Country      : United States
+    Region       : California
+    City         : Mountain View
+    Latitude     : 37.386
+    Longitude    : -122.0838
+    Timezone     : America/Los_Angeles
+
+[+] NETWORK
+    ISP          : Google LLC
+    ASN          : AS15169
+
+[+] GOOGLE MAPS
+
+    https://www.google.com/maps?q=37.386,-122.0838
 ```
 
 After a lookup:
 
 ```
-[1] Analyze another IP
-[2] Open location in Google Maps
-[3] Export JSON
-[4] Save report
-[0] Exit
+[::] Actions
+
+[01] Analyze another IP
+[02] Open location in Google Maps
+[03] Export JSON
+[04] Save report
+[00] Exit
+
+[?] Select an option:
+[-]
 ```
 
 ### Direct Lookup
@@ -111,11 +148,22 @@ After a lookup:
 ```
 
 ```
-[1/3] 8.8.8.8
-[+] Success …
+[::] Processing 3 IP addresses...
 
-Completed: 2
-Failed: 1
+[01] 8.8.8.8
+[+] IP INFORMATION
+    ...
+
+[02] 1.1.1.1
+[+] IP INFORMATION
+    ...
+
+[03] invalid-ip
+[!] Invalid IP address.
+[!] Please enter a valid public IPv4 or IPv6 address.
+
+[::] Completed: 2
+[::] Failed: 1
 ```
 
 Blank lines, `#` comments, duplicates, invalid IPs, and per-IP API errors are

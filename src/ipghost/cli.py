@@ -6,8 +6,9 @@ import argparse
 import json
 import re
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Optional
 
 from . import __app_name__, __version__
 from . import cache as cache_mod
@@ -75,15 +76,31 @@ def _provider(config: Config) -> IPWhoIsProvider:
     return IPWhoIsProvider(timeout=config.timeout, debug=config.debug)
 
 
-def lookup_ip(ip_text: str, config: Config) -> IPInfo:
+def lookup_ip(
+    ip_text: str,
+    config: Config,
+    on_stage: Optional[Callable[[str], None]] = None,
+) -> IPInfo:
+    """Resolve an IP, optionally reporting real pipeline stages.
+
+    Stages: "validating" -> ("cached" | "querying") -> "done".
+    Only the interactive UI passes a callback; every other mode is silent.
+    """
+    emit = on_stage or (lambda _stage: None)
+    emit("validating")
     validated = ensure_public(ip_text)
     cached = cache_mod.get(validated.text, config.cache_ttl)
     if cached is not None:
         try:
-            return _info_from_dict(validated.text, cached)
+            emit("cached")
+            info = _info_from_dict(validated.text, cached)
+            emit("done")
+            return info
         except Exception:
             pass
+    emit("querying")
     info = _provider(config).lookup(validated.text)
+    emit("done")
     try:
         cache_mod.put(validated.text, info.to_dict(), config.cache_ttl)
     except Exception:
@@ -240,10 +257,11 @@ def _run_batch(items: Sequence[str], config: Config, p: fmt.Palette) -> int:
     if total == 0:
         sys.stderr.write("[ERROR] No IP addresses found in input.\n")
         return EXIT_USAGE
+    sys.stdout.write(fmt.batch_header(p, total) + "\n\n")
     ok = 0
     failed = 0
     for index, candidate in enumerate(unique, start=1):
-        sys.stdout.write(f"[{index}/{total}] {candidate}\n")
+        sys.stdout.write(f"{fmt.batch_item(p, index)} {candidate}\n")
         try:
             info = lookup_ip(candidate, config)
         except RateLimitError:
@@ -265,7 +283,7 @@ def _run_batch(items: Sequence[str], config: Config, p: fmt.Palette) -> int:
             continue
         sys.stdout.write(fmt.format_report(info, p) + "\n")
         ok += 1
-    sys.stdout.write(f"Completed: {ok}\nFailed: {failed}\n")
+    sys.stdout.write(fmt.batch_summary(p, ok, failed) + "\n")
     return EXIT_OK if failed == 0 else EXIT_GENERAL
 
 
@@ -297,11 +315,19 @@ def _save_report(info: IPInfo, config: Config, p: fmt.Palette) -> Path:
 
 
 def _interactive(config: Config, p: fmt.Palette) -> int:
-    sys.stdout.write(fmt.banner(p) + "\n\n")
+    from . import __version__ as _version
+
+    sys.stdout.write(fmt.startup(p, _version))
     current: IPInfo | None = None
+
+    def _progress(stage: str) -> None:
+        line = fmt.stage_line(p, stage)
+        if line is not None:
+            sys.stdout.write(line + "\n")
+
     while True:
         try:
-            raw = input("[?] Enter public IP address:\n> ").strip()
+            raw = input(fmt.input_prompt(p)).strip()
         except (EOFError, KeyboardInterrupt):
             sys.stdout.write("\nBye.\n")
             return EXIT_OK
@@ -309,7 +335,7 @@ def _interactive(config: Config, p: fmt.Palette) -> int:
             sys.stderr.write("[ERROR] Empty IP address.\n")
             continue
         try:
-            current = lookup_ip(raw, config)
+            current = lookup_ip(raw, config, on_stage=_progress)
         except BaseException as exc:  # noqa: BLE001
             if config.debug:
                 import traceback
@@ -327,15 +353,15 @@ def _interactive(config: Config, p: fmt.Palette) -> int:
                     current.geolocation.latitude, current.geolocation.longitude
                 )
             )
-            sys.stdout.write(fmt.interactive_menu(p, maps_ok))
+            sys.stdout.write(fmt.interactive_menu(p, maps_ok) + "\n")
             try:
-                choice = input().strip()
+                choice = input(f"{p.token_in()} ").strip()
             except (EOFError, KeyboardInterrupt):
                 sys.stdout.write("\nBye.\n")
                 return EXIT_OK
-            if choice == "1":
+            if choice in ("1", "01"):
                 break  # another IP
-            if choice == "2":
+            if choice in ("2", "02"):
                 url = current.google_maps_url or build_maps_url(
                     current.geolocation.latitude, current.geolocation.longitude
                 )
@@ -350,7 +376,7 @@ def _interactive(config: Config, p: fmt.Palette) -> int:
                     sys.stdout.write(f"[!] {message}\n")
                     sys.stdout.write("[+] Google Maps:\n    " + url + "\n")
                 continue
-            if choice == "3":
+            if choice in ("3", "03"):
                 try:
                     path = _export_json(current, config)
                 except IpghostError as exc:
@@ -358,7 +384,7 @@ def _interactive(config: Config, p: fmt.Palette) -> int:
                     continue
                 sys.stdout.write(f"[+] JSON exported to {path}\n")
                 continue
-            if choice == "4":
+            if choice in ("4", "04"):
                 try:
                     path = _save_report(current, config, p)
                 except IpghostError as exc:
@@ -366,10 +392,10 @@ def _interactive(config: Config, p: fmt.Palette) -> int:
                     continue
                 sys.stdout.write(f"[+] Report saved to {path}\n")
                 continue
-            if choice == "0":
+            if choice in ("0", "00"):
                 sys.stdout.write("Bye.\n")
                 return EXIT_OK
-            sys.stdout.write("[?] Unknown option. Choose 1/2/3/4/0.\n")
+            sys.stdout.write("[?] Unknown option. Choose 01/02/03/04/00.\n")
 
 
 def main(argv: Sequence[str] | None = None) -> int:

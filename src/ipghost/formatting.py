@@ -1,13 +1,28 @@
-"""Terminal formatting. Colors are decorative only — never required."""
+"""Terminal UI — Kali/OSINT aesthetic, ASCII-first.
+
+Rules this module follows:
+- ASCII only for art, separators and status tokens (never decorative
+  Unicode, so terminal codecs cannot mangle the interface).
+- ANSI colors are decorative only: every string is also correct with
+  colors disabled (--no-color / non-tty).
+- This module formats data; it never validates, fetches or sanitizes.
+"""
 
 from __future__ import annotations
 
-import os
-import sys
-
 from .models import IPInfo
 
-_APPROX_NOTE = (
+BANNER_ART = (
+    "   ___ ____   ____ ____  _   _  ___  ____ _____",
+    "  |_ _|  _ \\ / ___/ ___|| | | |/ _ \\ / ___|_   _|",
+    "   | || |_) | |  | |  _ | |_| | | | | |  _  | |",
+    "   | ||  __/| |__| |_| ||  _  | |_| | |_| | | |",
+    "  |___|_|    \\____\\____||_| |_|\\___/ \\____|_|",
+)
+
+BANNER_SUBTITLE = "GLOBAL IP INTELLIGENCE & GEOLOCATION CLI"
+
+APPROX_NOTE = (
     "[!] NOTE\n"
     "    IP geolocation is approximate.\n"
     "    It does not identify an exact physical address,\n"
@@ -16,6 +31,8 @@ _APPROX_NOTE = (
 
 
 class Palette:
+    """ANSI colors behind one switch. Disabled == plain ASCII text."""
+
     def __init__(self, enabled: bool) -> None:
         self.enabled = enabled
 
@@ -24,20 +41,48 @@ class Palette:
             return text
         return f"\033[{code}m{text}\033[0m"
 
+    def brand(self, text: str) -> str:
+        return self.wrap("1;33", text)
+
+    def data(self, text: str) -> str:
+        return self.wrap("36", text)
+
+    def token_ok(self) -> str:
+        return self.wrap("1;32", "[+]")
+
+    def token_info(self) -> str:
+        return self.wrap("36", "[::]")
+
+    def token_ask(self) -> str:
+        return self.wrap("1;33", "[?]")
+
+    def token_in(self) -> str:
+        return self.wrap("37", "[-]")
+
+    def token_warn(self) -> str:
+        return self.wrap("1;31", "[!]")
+
+    def token_error(self) -> str:
+        return self.wrap("1;31", "[ERROR]")
+
+    # Backwards-compatible helpers (kept small on purpose).
     def title(self, text: str) -> str:
-        return self.wrap("1;36", text)
+        return self.brand(text)
 
     def section(self, text: str) -> str:
-        return self.wrap("1;32", text)
+        return self.brand(text)
 
     def warn(self, text: str) -> str:
-        return self.wrap("1;33", text)
+        return self.wrap("1;31", text)
 
     def error(self, text: str) -> str:
         return self.wrap("1;31", text)
 
 
 def colors_enabled(no_color: bool = False) -> bool:
+    import os
+    import sys
+
     if no_color:
         return False
     if os.environ.get("NO_COLOR", "") != "":
@@ -59,83 +104,130 @@ def _v(value: object) -> str:
     return text if text else "N/A"
 
 
+def ascii_banner(p: Palette) -> str:
+    width = max(len(line) for line in BANNER_ART)
+    art = "\n".join(p.brand(line) for line in BANNER_ART)
+    sub = p.data(BANNER_SUBTITLE.center(width))
+    return f"{art}\n{sub}"
+
+
 def banner(p: Palette) -> str:
-    top = "╔══════════════════════════════════════════════════════════╗"
-    mid1 = "║                         IPGHOST                          ║"
-    mid2 = "║             GLOBAL IP INTELLIGENCE CLI                   ║"
-    bot = "╚══════════════════════════════════════════════════════════╝"
-    return "\n".join(
-        [p.title(top), p.title(mid1), p.title(mid2), p.title(bot)]
-    )
+    """Legacy name kept for callers; returns the ASCII banner."""
+    return ascii_banner(p)
+
+
+def startup(p: Palette, version: str) -> str:
+    lines = [
+        "",
+        ascii_banner(p),
+        "",
+        f"{p.token_info()} Global IP Intelligence & Geolocation CLI",
+        f"{p.token_info()} Version {version}",
+        f"{p.token_ok()} Status: Ready",
+        "",
+    ]
+    return "\n".join(lines)
 
 
 def report_banner(p: Palette) -> str:
-    top = "╔══════════════════════════════════════════════════════════╗"
-    mid1 = "║                         IPGHOST                          ║"
-    mid2 = "║             GLOBAL IP INTELLIGENCE REPORT                ║"
-    bot = "╚══════════════════════════════════════════════════════════╝"
-    return "\n".join(
-        [p.title(top), p.title(mid1), p.title(mid2), p.title(bot)]
-    )
+    """Legacy name kept for callers; no giant boxes anymore."""
+    return ascii_banner(p)
+
+
+def stage_line(p: Palette, stage: str) -> str | None:
+    """Map a real lookup stage to one honest progress line."""
+    if stage == "validating":
+        return f"{p.token_info()} Validating IP..."
+    if stage == "querying":
+        return f"{p.token_info()} Querying GeoIP provider..."
+    if stage == "cached":
+        return f"{p.token_info()} Loading cached result..."
+    if stage == "done":
+        return f"{p.token_ok()} Lookup completed."
+    return None
 
 
 def format_report(info: IPInfo, p: Palette) -> str:
     g = info.geolocation
     n = info.network
+    version = "IPv6" if info.ip_version == 6 else "IPv4"
     lines = [
         "",
-        report_banner(p),
+        f"{p.token_ok()} {p.brand('IP INFORMATION')}",
+        f"    Address      : {p.data(info.ip)}",
+        f"    Version      : {p.data(version)}",
+        f"    Type         : {p.data('Public')}",
         "",
-        p.section("[+] IP ADDRESS"),
-        f"    {info.ip}",
+        f"{p.token_ok()} {p.brand('GEOLOCATION')}",
+        f"    Country      : {p.data(_v(g.country))}",
+        f"    Country Code : {p.data(_v(g.country_code))}",
+        f"    Region       : {p.data(_v(g.region))}",
+        f"    Region Code  : {p.data(_v(g.region_code))}",
+        f"    City         : {p.data(_v(g.city))}",
+        f"    Postal Code  : {p.data(_v(g.postal_code))}",
+        f"    Latitude     : {p.data(_v(g.latitude))}",
+        f"    Longitude    : {p.data(_v(g.longitude))}",
+        f"    Timezone     : {p.data(_v(g.timezone))}",
         "",
-        p.section("[+] GEOLOCATION"),
-        f"    Country      : {_v(g.country)}",
-        f"    Country Code : {_v(g.country_code)}",
-        f"    Region       : {_v(g.region)}",
-        f"    Region Code  : {_v(g.region_code)}",
-        f"    City         : {_v(g.city)}",
-        f"    Postal Code  : {_v(g.postal_code)}",
-        f"    Latitude     : {_v(g.latitude)}",
-        f"    Longitude    : {_v(g.longitude)}",
-        f"    Timezone     : {_v(g.timezone)}",
-        "",
-        p.section("[+] NETWORK"),
-        f"    ISP          : {_v(n.isp)}",
-        f"    Organization : {_v(n.organization)}",
-        f"    ASN          : {_v(n.asn)}",
-        f"    AS Name      : {_v(n.as_name)}",
-        f"    Hostname     : {_v(n.hostname)}",
+        f"{p.token_ok()} {p.brand('NETWORK')}",
+        f"    ISP          : {p.data(_v(n.isp))}",
+        f"    Organization : {p.data(_v(n.organization))}",
+        f"    ASN          : {p.data(_v(n.asn))}",
+        f"    AS Name      : {p.data(_v(n.as_name))}",
+        f"    Hostname     : {p.data(_v(n.hostname))}",
         "",
     ]
     if info.google_maps_url:
-        lines.append(p.section("[+] GOOGLE MAPS"))
+        lines.append(f"{p.token_ok()} {p.brand('GOOGLE MAPS')}")
         lines.append("")
-        lines.append(f"    {info.google_maps_url}")
+        lines.append(f"    {p.data(info.google_maps_url)}")
         lines.append("")
     else:
-        lines.append(p.warn("[!] Google Maps location unavailable."))
+        lines.append(f"{p.token_warn()} Google Maps location unavailable.")
         lines.append("")
-    lines.append(p.warn(_APPROX_NOTE))
+    lines.append(p.token_warn() + " NOTE")
+    lines.append("    IP geolocation is approximate.")
+    lines.append("    It does not identify an exact physical address,")
+    lines.append("    person, or real-time device location.")
     lines.append("")
     return "\n".join(lines)
 
 
 def interactive_menu(p: Palette, maps_available: bool) -> str:
     lines = [
-        "══════════════════════════════════════════════════════════",
         "",
-        "[1] Analyze another IP",
+        f"{p.token_info()} Actions",
+        "",
+        "[01] Analyze another IP",
     ]
     if maps_available:
-        lines.append("[2] Open location in Google Maps")
+        lines.append("[02] Open location in Google Maps")
     else:
-        lines.append("[2] Open location in Google Maps (unavailable)")
+        lines.append("[02] Open location in Google Maps (unavailable)")
     lines += [
-        "[3] Export JSON",
-        "[4] Save report",
-        "[0] Exit",
+        "[03] Export JSON",
+        "[04] Save report",
+        "[00] Exit",
         "",
-        "Select: ",
+        f"{p.token_ask()} Select an option:",
     ]
     return "\n".join(lines)
+
+
+def input_prompt(p: Palette) -> str:
+    return f"{p.token_ask()} Enter public IP address:\n{p.token_in()} "
+
+
+def batch_header(p: Palette, total: int) -> str:
+    return f"{p.token_info()} Processing {total} IP addresses..."
+
+
+def batch_item(p: Palette, index: int) -> str:
+    return f"{p.data(f'[{index:02d}]')}"
+
+
+def batch_summary(p: Palette, ok: int, failed: int) -> str:
+    return (
+        f"{p.token_info()} Completed: {ok}\n"
+        f"{p.token_info()} Failed: {failed}"
+    )

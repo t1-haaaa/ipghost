@@ -5,6 +5,8 @@ Format follows Keep a Changelog; versions follow SemVer.
 
 ## Unreleased
 
+- style: redesign terminal interface (ASCII banner, ANSI accents, numbered
+  menu) — no logic, JSON, security, or input-encoding changes.
 - fix: handle terminal input encoding safely — strip invisible edge
   characters (C1 controls, BOM, bidi marks) before IP validation, clean
   invalid-IP messages (no raw escape echo), default `PYTHONIOENCODING=utf-8`
