@@ -134,7 +134,9 @@ def _friendly_error(exc: BaseException) -> str:
     if isinstance(exc, NonPublicIPError):
         return f"[!] This is not a public routable IP.\n    {exc.message}"
     if isinstance(exc, InvalidIPError):
-        return f"[ERROR] {exc.message}"
+        # Never echo raw input: it may contain terminal/codec garbage
+        # (control bytes, bidi marks, BOM). Keep the message clean.
+        return "[ERROR] Invalid IP address.\n[!] Please enter a valid public IPv4 or IPv6 address."
     if isinstance(exc, RateLimitError):
         return "[!] API rate limit reached.\n    Please wait and try again later."
     if isinstance(exc, TimeoutError):
@@ -177,6 +179,7 @@ def _run_single(
             import traceback
 
             traceback.print_exc()
+            sys.stderr.write(f"[debug] raw input: {ip_text!r}\n")
         sys.stderr.write(_friendly_error(exc) + "\n")
         if isinstance(exc, (InvalidIPError, NonPublicIPError)):
             return EXIT_INVALID_IP
@@ -198,6 +201,7 @@ def _run_map(ip_text: str, config: Config) -> int:
             import traceback
 
             traceback.print_exc()
+            sys.stderr.write(f"[debug] raw input: {ip_text!r}\n")
         sys.stderr.write(_friendly_error(exc) + "\n")
         return _exit_for(exc)
     url = info.google_maps_url or build_maps_url(
@@ -248,7 +252,7 @@ def _run_batch(items: Sequence[str], config: Config, p: fmt.Palette) -> int:
             failed += 1
             continue
         except (InvalidIPError, NonPublicIPError) as exc:
-            sys.stdout.write(f"[!] {exc.message}\n\n")
+            sys.stdout.write(_friendly_error(exc) + "\n\n")
             failed += 1
             continue
         except IpghostError as exc:
@@ -311,6 +315,7 @@ def _interactive(config: Config, p: fmt.Palette) -> int:
                 import traceback
 
                 traceback.print_exc()
+                sys.stderr.write(f"[debug] raw input: {raw!r}\n")
             sys.stderr.write(_friendly_error(exc) + "\n")
             continue
         sys.stdout.write(fmt.format_report(current, p) + "\n")
@@ -369,7 +374,9 @@ def _interactive(config: Config, p: fmt.Palette) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     # UTF-8 safe on Windows consoles (Linux is UTF-8 already).
-    for stream in (sys.stdout, sys.stderr):
+    # stdin included: without it, a locale-derived codec can turn terminal
+    # bytes into control garbage before our sanitizer ever sees the text.
+    for stream in (sys.stdout, sys.stderr, sys.stdin):
         reconfig = getattr(stream, "reconfigure", None)
         if callable(reconfig):
             try:

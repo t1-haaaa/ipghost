@@ -37,6 +37,13 @@ if [[ ! -x "$PROJECT_ROOT/.venv/bin/python" && ! -x "$PROJECT_ROOT/.venv/Scripts
   fi
 fi
 
+# Prefer UTF-8 stdio when the user has not chosen otherwise, so terminal
+# bytes and Python's stdin decoder agree. Respects existing configuration;
+# never touches LANG/LC_ALL.
+if [[ -z "${PYTHONIOENCODING:-}" ]]; then
+  export PYTHONIOENCODING="utf-8"
+fi
+
 # Zero runtime dependencies: stdlib only. If a future provider needs extra
 # packages, install them here from a locked requirements file.
 export PYTHONPATH="$PROJECT_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"

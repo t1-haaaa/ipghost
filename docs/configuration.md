@@ -13,3 +13,11 @@ Copy `.env.example` to `.env` for local tweaks. `.env` is git-ignored and
 never overrides real environment variables.
 
 CLI flags: `--no-color`, `--debug`, `--timeout SECS`.
+
+## Input encoding
+
+Surrounding whitespace and invisible edge characters (BOM, bidi marks,
+stray terminal control bytes) are removed before validation; anything
+unexpected inside the address is rejected with a clean message. `ipghost.sh`
+defaults `PYTHONIOENCODING` to `utf-8` only when unset — `LANG`/`LC_ALL`
+and any user-provided value are never overridden.

@@ -8,6 +8,7 @@ rejected with a clear reason and are never sent to the provider.
 from __future__ import annotations
 
 import ipaddress
+import unicodedata
 from dataclasses import dataclass
 
 from .errors import InvalidIPError, NonPublicIPError
@@ -22,20 +23,58 @@ class ValidatedIP:
     text: str
 
 
+# Invisible characters that commonly sneak in via copy-paste, BOM-prefixed
+# files, RTL/bidi terminals, or stdin codec mismatches (e.g. C1 controls such
+# as U+0096/U+0083). They are never part of an IPv4/IPv6 literal, so removing
+# them from the EDGES is safe. Anything invisible left INSIDE the text still
+# fails validation — we never mask real content.
+_EDGE_STRIP_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
+# U+FFFD appears when undecodable stdin bytes are decoded with errors="replace";
+# it is never part of an address.
+_EDGE_STRIP_EXTRA = frozenset({"\ufffd"})
+
+
+def clean_ip_text(raw: object) -> str:
+    """Return user input with surrounding whitespace/invisibles removed.
+
+    Only the edges are touched; interior content is returned verbatim so a
+    genuinely invalid address can never become valid silently.
+    """
+    if raw is None:
+        return ""
+    if not isinstance(raw, str):
+        raise InvalidIPError("Invalid IP address.")
+    text = raw.strip()
+    # Strip "[...]" wrappers first (existing behaviour, e.g. "[::1]").
+    text = text.strip("[],").strip()
+    start, end = 0, len(text)
+    while start < end and (
+        unicodedata.category(text[start]) in _EDGE_STRIP_CATEGORIES
+        or text[start] in _EDGE_STRIP_EXTRA
+    ):
+        start += 1
+    while end > start and (
+        unicodedata.category(text[end - 1]) in _EDGE_STRIP_CATEGORIES
+        or text[end - 1] in _EDGE_STRIP_EXTRA
+    ):
+        end -= 1
+    return text[start:end].strip()
+
+
 def parse_ip(raw: str) -> ValidatedIP:
     """Parse and validate syntax. Raises InvalidIPError on any bad input."""
-    if raw is None:
-        raise InvalidIPError("Empty IP address.")
-    text = raw.strip().strip("[],").strip()
+    if raw is not None and not isinstance(raw, str):
+        raise InvalidIPError("Invalid IP address.")
+    text = clean_ip_text(raw)
     if not text:
         raise InvalidIPError("Empty IP address.")
     # Reject obviously unsupported formats early (CIDR, URLs, hostnames).
     if "/" in text or " " in text:
-        raise InvalidIPError(f"Invalid IP address: {raw.strip()!r}.")
+        raise InvalidIPError("Invalid IP address.")
     try:
         addr = ipaddress.ip_address(text)
     except ValueError as exc:
-        raise InvalidIPError(f"Invalid IP address: {raw.strip()!r}.") from exc
+        raise InvalidIPError("Invalid IP address.") from exc
     return ValidatedIP(address=addr, version=addr.version, text=str(addr))
 
 

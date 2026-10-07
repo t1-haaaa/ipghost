@@ -5,6 +5,11 @@ Format follows Keep a Changelog; versions follow SemVer.
 
 ## Unreleased
 
+- fix: handle terminal input encoding safely — strip invisible edge
+  characters (C1 controls, BOM, bidi marks) before IP validation, clean
+  invalid-IP messages (no raw escape echo), default `PYTHONIOENCODING=utf-8`
+  when unset, UTF-8 stdin handling.
+
 ## 0.1.0 — 2026-10-07
 
 - Initial IPGHOST release: interactive / direct / `--json` / `--file` /
